@@ -108,7 +108,7 @@ async function render({model, el}) {
     // Basic cleanup when the element is removed (helps in rerender scenarios)
     const observer = new MutationObserver(() => {
         if (!document.body.contains(el)) {
-            clearInterval(intervalId);
+            clearInterval(_intervalId);
             window.removeEventListener("message", processDomWindowMessage, false);
             observer.disconnect();
         }
