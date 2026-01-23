@@ -1,19 +1,24 @@
 import "./widget.css";
 
-
 async function render({model, el}) {
-    // Create a unique ID for the container
-    const containerId = `wwt-container-${Math.random().toString(36).substr(2, 9)}`;
+    const containerId = `wwt-container-${Math.random().toString(36).slice(2)}`;
     const serverUrl = model.get("server_url");
-    // const serverUrl = "https://web.wwtassets.org/research/latest";
     const serverOrigin = new URL(serverUrl).origin;
 
-    let _alive = false;
-    let _lastPongTimestamp = 0;
+    let _intervalId = null;
+    let _lastPingTs = 0;
+    let _lastMatchingPongTs = 0;
+
+    let _consecutivePongs = 0;
+    const REQUIRED_CONSECUTIVE_PONGS = model.get("required_consecutive_pongs") || 3;
+
+    // How often to ping and how long a "pong" is considered fresh
+    const PING_INTERVAL_MS = model.get("ping_interval") * 1000 || 500;
+    const PONG_FRESH_MS = 2500;
 
     // Create iframe
-    const iframe = document.createElement('iframe');
-    iframe.src = serverUrl + "/?origin=" + location.origin;
+    const iframe = document.createElement("iframe");
+    iframe.src = `${serverUrl}/?origin=${encodeURIComponent(location.origin)}`;
     iframe.style.width = "100%";
     iframe.style.height = "400px";
     iframe.style.border = "none";
@@ -21,48 +26,71 @@ async function render({model, el}) {
 
     el.appendChild(iframe);
 
-    window.addEventListener(
-        'message',
-        function (event) { processDomWindowMessage(event); },
-        false
-    );
-
-    setInterval(function () { checkApp(); }, 1000);
-
     function processDomWindowMessage(event) {
+        // Strictly ensure message is from the expected iframe + origin
+        if (event.origin !== serverOrigin) return;
+        if (event.source !== iframe.contentWindow) return;
+
         const payload = event.data;
-        if (event.origin !== serverOrigin)
-            return;
 
-        if (payload.type === "wwt_ping_pong" && payload.sessionId === containerId) {
-            const ts = +payload.threadId;
+        // Handle ping/pong acks
+        if (payload?.type === "wwt_ping_pong" && payload?.sessionId === containerId) {
+            const ts = Number(payload.threadId);
+            if (!Number.isNaN(ts)) {
+                // Only accept a pong that matches the most recent ping timestamp
+                if (ts === _lastPingTs) {
+                    _lastMatchingPongTs = ts;
+                    _consecutivePongs += 1;
 
-            if (!isNaN(ts)) {
-                _lastPongTimestamp = ts;
+                    console.log(`Received matching pong from WWT research app (consecutive: ${_consecutivePongs}).`);
+
+                    if (_consecutivePongs >= REQUIRED_CONSECUTIVE_PONGS && !model.get("_wwt_ready")) {
+                        console.log(`WWT research app is ready (>= ${REQUIRED_CONSECUTIVE_PONGS} consecutive pongs).`);
+                        model.set("_wwt_ready", true);
+                        model.save_changes();
+
+                        // Stop the heartbeat permanently
+                        if (_intervalId !== null) {
+                            clearInterval(_intervalId);
+                            _intervalId = null;
+                        }
+                    }
+                }
+                // If it doesn't match, ignore it (stale or unrelated)
             }
-        } else {
-            model.send(payload);
+            return;
         }
+
+        // Forward all other messages to Python
+        model.send(payload);
     }
+
+    window.addEventListener("message", processDomWindowMessage, false);
 
     function checkApp() {
-        const window = iframe.contentWindow;
+        const w = iframe.contentWindow;
+        if (!w) return;
 
-        if (window) {
-            window.postMessage({
+        // If we haven't seen a fresh matching pong recently, reset the consecutive counter
+        const alive = (Date.now() - _lastMatchingPongTs) < PONG_FRESH_MS;
+        if (!alive) {
+            console.log("WWT research app is unresponsive, resetting pong counter.");
+            _consecutivePongs = 0;
+        }
+
+        // Send the next ping and expect the iframe to echo back the same threadId
+        _lastPingTs = Date.now();
+        w.postMessage(
+            {
                 type: "wwt_ping_pong",
-                threadId: "" + Date.now(),
+                threadId: String(_lastPingTs),
                 sessionId: containerId,
-            }, serverOrigin);
-        }
-        _alive = (Date.now() - _lastPongTimestamp) < 2500;
-
-        if (_alive && !model.get("_wwt_ready")) {
-            console.log("WWT research app is ready!");
-            model.set("_wwt_ready", true);
-            model.save_changes();
-        }
+            },
+            serverOrigin
+        );
     }
+
+    _intervalId = setInterval(checkApp, PING_INTERVAL_MS);
 
     // Handle commands
     model.on("change:_commands", () => {
@@ -71,14 +99,21 @@ async function render({model, el}) {
         model.set("_dirty", true);
         model.save_changes();
 
-        commands.forEach(cmd => {
-            const window = iframe.contentWindow;
-
-            if (window) {
-                window.postMessage(cmd, serverOrigin);
-            }
+        commands.forEach((cmd) => {
+            const w = iframe.contentWindow;
+            if (w) w.postMessage(cmd, serverOrigin);
         });
     });
+
+    // Basic cleanup when the element is removed (helps in rerender scenarios)
+    const observer = new MutationObserver(() => {
+        if (!document.body.contains(el)) {
+            clearInterval(intervalId);
+            window.removeEventListener("message", processDomWindowMessage, false);
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
 }
 
 export default {render};

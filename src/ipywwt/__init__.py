@@ -1,16 +1,17 @@
 import importlib.metadata
-import pathlib
 import os
+import pathlib
+import socket
 import subprocess
 import threading
 import time
-import socket
+from typing import Optional, Any
 
+import ipywidgets
+import traitlets
 from anywidget import AnyWidget
 from pywwt import BaseWWTWidget
-import traitlets
 from traitlets import observe, default
-import ipywidgets
 
 try:
     __version__ = importlib.metadata.version("ipywwt")
@@ -20,9 +21,10 @@ except importlib.metadata.PackageNotFoundError:
 STATIC = pathlib.Path(__file__).parent / "static"
 RESEARCH_APP = pathlib.Path(__file__).parent / "web_static"
 DEFAULT_SURVEYS_URL = "https://gist.githubusercontent.com/Carifio24/e8b02488d43a0e4381648fe06c100739/raw/surveys.xml"
+MINIMAL_SURVEYS_URL = "https://gist.githubusercontent.com/Carifio24/447d69e14a3196665fa3cb59f93ec0ee/raw/surveys_minimal.wtml"
 
 
-class WWTWidget(AnyWidget, BaseWWTWidget):
+class WWTWidget(BaseWWTWidget, AnyWidget):
     _esm = STATIC / "widget.js"
     _css = STATIC / "widget.css"
 
@@ -33,14 +35,29 @@ class WWTWidget(AnyWidget, BaseWWTWidget):
 
     server_url = traitlets.Unicode(default_value="").tag(sync=True)
 
+    required_consecutive_pongs = traitlets.Int(
+        default_value=3,
+        help="Number of successful pongs before the WWT research app is considered ready.",
+    ).tag(sync=True)
+
+    ping_interval = traitlets.Float(
+        default_value=0.5,
+        help="Interval in seconds between pings to the WWT research app.",
+    ).tag(sync=True)
+
     def __init__(
-        self, hide_all_chrome=True, port=8899, use_remote=False, surveys_url=DEFAULT_SURVEYS_URL, *args, **kwargs
+        self,
+        hide_all_chrome: bool = True,
+        port: int = 8899,
+        use_remote: bool = False,
+        surveys_url: str = DEFAULT_SURVEYS_URL,
+        *args,
+        **kwargs,
     ):
         AnyWidget.__init__(self, *args, **kwargs)
-        BaseWWTWidget.__init__(self,
-                               hide_all_chrome=hide_all_chrome,
-                               surveys_url=surveys_url,
-                               *args, **kwargs)
+        BaseWWTWidget.__init__(
+            self, hide_all_chrome=hide_all_chrome, surveys_url=surveys_url
+        )
 
         # Process messages from the frontend
         self.on_msg(self._on_app_message_received)
@@ -59,7 +76,7 @@ class WWTWidget(AnyWidget, BaseWWTWidget):
         else:
             self.server_url = "https://web.wwtassets.org/research/latest"
 
-    def _is_server_running(self):
+    def _is_server_running(self) -> bool:
         """Check if a process is already listening on the given port."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             return sock.connect_ex(("localhost", self._port)) == 0
@@ -84,21 +101,23 @@ class WWTWidget(AnyWidget, BaseWWTWidget):
         # Wait a bit to ensure the server starts
         time.sleep(1)
 
-    def _actually_send_msg(self, payload):
+    def _actually_send_msg(self, payload: dict):
         """Sends a command to the JavaScript widget."""
         self._commands = self._commands + [payload]
 
-    def _on_app_message_received(self, instance, payload, buffers=[]):
+    def _on_app_message_received(
+        self, instance: Any, payload: dict, buffers: Optional[list] = None
+    ):
         """Process messages from the frontend."""
         super()._on_app_message_received(payload)
 
     @observe("_wwt_ready")
-    def _on_wwt_ready(self, change):
+    def _on_wwt_ready(self, change: dict):
         if change["new"]:
             self._on_app_status_change(True)
 
     @observe("_dirty")
-    def _on_dirty(self, change):
+    def _on_dirty(self, change: dict):
         if self._dirty:
             self._commands = []  # Clear the command queue
             self._dirty = False

@@ -30,6 +30,7 @@ def Page():
     selected_foreground_layer = solara.use_reactive("Digitized Sky Survey (Color)")
     foreground_opacity = solara.use_reactive(1.0)
     all_layers = solara.use_reactive([])
+    is_wwt_ready = solara.use_reactive(False)
 
     with rv.Container():
         with rv.Row():
@@ -39,6 +40,13 @@ def Page():
                         solara.Text("WWT Widget Test")
 
                     with rv.CardText():
+                        rv.Alert(
+                            children=[
+                                f"WWT research app is {'' if is_wwt_ready.value else 'NOT '}ready."
+                            ],
+                            type="info" if is_wwt_ready.value else "warning",
+                        )
+
                         wwt_container = rv.Html(tag="div")
 
         with rv.Row():
@@ -131,11 +139,13 @@ def Page():
     def _add_widget():
         # The `use_remote` parameter will toggle between using the remote WWT
         #  server and the local WWT server.
-        wwt_widget = WWTWidget(use_remote=False)
+        wwt_widget = WWTWidget(use_remote=True)
         all_layers.set(wwt_widget.available_layers)
 
         wwt_widget_container = solara.get_widget(wwt_container)
         wwt_widget_container.children = (wwt_widget,)
+
+        wwt_widget.observe(lambda c: is_wwt_ready.set(c["new"]), names=["_wwt_ready"])
 
         def cleanup():
             wwt_widget_container.children = ()
