@@ -41,7 +41,7 @@ class WWTWidget(BaseWWTWidget, AnyWidget):
     ).tag(sync=True)
 
     ping_interval = traitlets.Float(
-        default_value=0.5,
+        default_value=1.0,
         help="Interval in seconds between pings to the WWT research app.",
     ).tag(sync=True)
 

@@ -42,10 +42,10 @@ async function render({model, el}) {
                     _lastMatchingPongTs = ts;
                     _consecutivePongs += 1;
 
-                    console.log(`Received matching pong from WWT research app (consecutive: ${_consecutivePongs}).`);
+                    console.log(`Received matching pong from WWT research app (consecutive: ${_consecutivePongs} [${PING_INTERVAL_MS / 1000}s each]).`);
 
                     if (_consecutivePongs >= REQUIRED_CONSECUTIVE_PONGS && !model.get("_wwt_ready")) {
-                        console.log(`WWT research app is ready (>= ${REQUIRED_CONSECUTIVE_PONGS} consecutive pongs).`);
+                        console.log(`WWT research app is ready (>= ${REQUIRED_CONSECUTIVE_PONGS} [${PING_INTERVAL_MS * REQUIRED_CONSECUTIVE_PONGS / 1000}s total] consecutive pongs).`);
                         model.set("_wwt_ready", true);
                         model.save_changes();
 
