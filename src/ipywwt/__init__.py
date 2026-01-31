@@ -4,7 +4,7 @@ from pathlib import Path
 import astropy.units as u
 from astropy.time import Time
 from anywidget import AnyWidget
-from traitlets import Unicode, Float, observe, default
+from traitlets import Unicode, Float, observe, default, Bool
 import logging
 import numpy as np
 from astropy.coordinates import SkyCoord
@@ -16,7 +16,7 @@ from .layers import TableLayer, LayerManager
 
 bundler_output_dir = Path(__file__).parent / "static"
 
-DEFAULT_SURVEYS_URL = "https://worldwidetelescope.github.io/pywwt/surveys.xml"
+DEFAULT_SURVEYS_URL = "https://gist.githubusercontent.com/Carifio24/e8b02488d43a0e4381648fe06c100739/raw/surveys.xml"
 R2D = 180 / np.pi
 R2H = 12 / np.pi
 
@@ -40,6 +40,8 @@ class WWTWidget(AnyWidget):
     foreground_opacity = Float(
         0.8, help="The opacity of the foreground layer " "(`float`)"
     )
+    
+    mounted = Bool(False, help="Whether the widget is mounted (`bool`)").tag(sync=True)
 
     # View state that the frontend sends to us:
     _raRad = 0.0
@@ -52,7 +54,8 @@ class WWTWidget(AnyWidget):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
+        self.message_queue = []
+        self._on_ready = []
         self.on_msg(self._on_app_message_received)
 
         self._callbacks = {}
@@ -63,6 +66,7 @@ class WWTWidget(AnyWidget):
 
         self.layers = LayerManager(parent=self)
         self.current_mode = "sky"
+        self.observe(self._on_mounted_change, names='mounted')
 
     def _send_msg(self, **kwargs):
         """
@@ -72,11 +76,43 @@ class WWTWidget(AnyWidget):
         self.send(msg_cls(**kwargs))
 
     def send(self, msg: RemoteAPIMessage, buffers=None):
-        super().send(asdict(msg), buffers)
+        if self.mounted:
+            super().send(asdict(msg), buffers)
+        else:
+            self.message_queue.append({'msg':msg, 'buffers':buffers})
 
     def load_image_collection(self, url=DEFAULT_SURVEYS_URL):
         self.send(LoadImageCollectionMessage(url))
-
+    
+    def _on_mounted_change(self, change):
+        while self.message_queue:
+            message = self.message_queue.pop(0)
+            self.send(message['msg'], message['buffers'])
+            
+        callbacks = self._on_ready
+        if callbacks:
+            for callback in callbacks:
+                callback()
+    
+    def on_ready(self, callback):
+        """
+        Set a callback function that will be executed when the widget receives
+        the "wwt_ready" message indicating the WWT application is ready to recieve
+        messages.
+        
+        Useful for defining intialization actions that require the WWT application
+        """
+        self._on_ready.append(callback)
+    
+    def ensure_mounted(self, callback):
+        # add to wwt_ready callback as a list
+        if self.mounted:
+            print('already mounted: running callback')
+            callback()
+            return
+        print('not mounted: adding callback')
+        self._on_ready.append(callback)
+    
     @observe("foreground")
     def _on_foreground_change(self, changed):
         self.send(SetForegroundByNameMessage(name=changed["new"]))
@@ -283,6 +319,9 @@ class WWTWidget(AnyWidget):
             )
         if self.current_mode == "panorama":
             pass
+
+    def clear_tile_cache(self):
+        self.send(ClearTileCacheMessage())
 
     @default("layout")
     def _default_layout(self):

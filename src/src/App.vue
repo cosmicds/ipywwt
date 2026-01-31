@@ -418,6 +418,7 @@ import {
 import {
   classicPywwt,
   isPingPongMessage,
+  isClearTileCacheMessage,
   layers,
   selections,
   settings,
@@ -1369,6 +1370,18 @@ const App = defineComponent({
       'setResearchAppTableLayerSelectability',
     ]),
 
+    onMounted() {
+      // wait for show to be true
+      const interval = setInterval(() => {
+        if (this.show) {
+          console.log("Research app mounted");
+          window.postMessage({ event: "research_app_ready" }, "*");
+          clearInterval(interval);
+        }
+      }, 100);
+      
+    },
+
     parseFloatParam(param: string | (string | null)[], fallback: number): number {
       if (typeof param === "string") {
         const value = parseFloat(param);
@@ -2029,6 +2042,13 @@ const App = defineComponent({
       }
 
       return false;
+    },
+
+    handleClearTileCache(msg: any): boolean {
+      if (!isClearTileCacheMessage(msg)) return false;
+
+      this.clearTileCache();
+      return true;
     },
 
     wwtOnPointerMove(event: PointerEvent) {
@@ -3016,7 +3036,11 @@ const App = defineComponent({
         )
       ); 
 
-    });
+    }).then(() => {
+      // We need to wait for the engine to be ready before we can start
+      // listening for messages.
+      this.onMounted();
+    })
 
     setTimeout(() => {
       this.show = true;

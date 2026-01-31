@@ -70,6 +70,12 @@ class SetForegroundByOpacityMessage(RemoteAPIMessage):
     id: str = field(default_factory=lambda: str(uuid4()))
 
 
+@dataclass
+class ClearTileCacheMessage(RemoteAPIMessage):
+    event: str = "clear_tile_cache"
+    id: str = field(default_factory=lambda: str(uuid4()))
+
+
 msg_ref = dict(
     inspect.getmembers(
         sys.modules[__name__],
