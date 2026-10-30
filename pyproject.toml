@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ipywwt"
 version = "0.0.0"
-dependencies = ["anywidget", "toasty", "matplotlib", "astropy", "pywwt>=0.26.0"]
+dependencies = ["anywidget", "toasty", "matplotlib", "astropy", "pywwt>=0.26.1"]
 readme = "README.md"
 requires-python = ">=3.13"
 
